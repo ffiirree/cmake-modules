@@ -11,6 +11,8 @@ endif()
 if(NOT Filament_FIND_COMPONENTS)
     list(APPEND
         Filament_FIND_COMPONENTS
+
+        # libraries
         filament
         backend
         bluegl # OpenGL bindings for macOS, Linux and Windows
@@ -25,18 +27,37 @@ if(NOT Filament_FIND_COMPONENTS)
         gltfio # Loader for glTF 2.0
         ibl # IBL generation tools
         image # Image filtering and simple transforms
-        imageio # Image file reading / writing, only intended for internal use
+        imageio-lite # Image file reading / writing, only intended for internal use
         matdbg # DebugServer for inspecting shaders at run-time (debug builds only)
-        math # Math library
-        mathio # Math types support for output streams
         utils # Utility library (threads, memory, data structures, etc.)
         viewer # glTF viewer library (requires gltfio)
         zstd
         smol-v
+
+        # tools
+        matc
+        resgen
+        cmgen
+        mipgen
     )
 endif()
 
-foreach(COMPONENT ${Filament_FIND_COMPONENTS})
+list(REMOVE_DUPLICATES Filament_FIND_COMPONENTS)
+
+# tools
+list(APPEND
+    Filament_FIND_TOOLS
+    matc
+    resgen
+    cmgen
+    mipgen
+)
+
+# libraries
+set(Filament_FIND_LIBRARIES ${Filament_FIND_COMPONENTS})
+list(REMOVE_ITEM Filament_FIND_LIBRARIES ${Filament_FIND_TOOLS})
+
+foreach(COMPONENT ${Filament_FIND_LIBRARIES})
     if(MSVC)
         find_library(
             Filament_${COMPONENT}_LIBRARY_RELEASE
@@ -79,20 +100,36 @@ foreach(COMPONENT ${Filament_FIND_COMPONENTS})
             NO_DEFAULT_PATH
         )
 
-        
-        if(Filament_${COMPONENT}_LIBRARY)
-            if(NOT TARGET filament::${COMPONENT})
-                add_library(filament::${COMPONENT} STATIC IMPORTED)
-                set_target_properties(filament::${COMPONENT}
-                    PROPERTIES
-                    INTERFACE_INCLUDE_DIRECTORIES "${Filament_INCLUDE_DIR}"
+        if(Filament_${COMPONENT}_LIBRARY AND NOT TARGET filament::${COMPONENT})
+            add_library(filament::${COMPONENT} STATIC IMPORTED)
+            set_target_properties(filament::${COMPONENT}
+                PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${Filament_INCLUDE_DIR}"
 
-                    IMPORTED_LOCATION "${Filament_${COMPONENT}_LIBRARY}"
-                )
+                IMPORTED_LOCATION "${Filament_${COMPONENT}_LIBRARY}"
+            )
 
-                set(Filament_${COMPONENT}_FOUND TRUE)
-            endif()
+            set(Filament_${COMPONENT}_FOUND TRUE)
         endif()
+    endif()
+endforeach()
+
+foreach(TOOL ${Filament_FIND_TOOLS})
+    find_program(
+        Filament_${TOOL}_EXECUTABLE
+        NAMES ${TOOL}
+        PATHS ${Filament_ROOT_DIR}
+        PATH_SUFFIXES bin
+        NO_DEFAULT_PATH
+    )
+
+    if(Filament_${TOOL}_EXECUTABLE AND NOT TARGET filament::${TOOL})
+        add_executable(filament::${TOOL} IMPORTED)
+        set_target_properties(filament::${TOOL}
+            PROPERTIES
+            IMPORTED_LOCATION "${Filament_${TOOL}_EXECUTABLE}"
+        )
+        set(Filament_${TOOL}_FOUND TRUE)
     endif()
 endforeach()
 
