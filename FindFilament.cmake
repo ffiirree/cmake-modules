@@ -1,117 +1,104 @@
-# FindFilament.cmake
-# Find Filament rendering engine
-#
-# This module defines:
-#  Filament_FOUND - If false, do not try to use Filament
-#  Filament_INCLUDE_DIRS - Include directories for Filament
-#  Filament_LIBRARIES - Libraries to link to
+find_path(
+    Filament_INCLUDE_DIR
+    NAMES filament/Engine.h
+    PATH_SUFFIXES include
+)
 
-set(Filament_ROOT "" CACHE PATH "Root directory of Filament SDK")
-
-# Check environment variable if not set
-if(NOT Filament_ROOT AND DEFINED ENV{FILAMENT_DIR})
-  set(Filament_ROOT "$ENV{FILAMENT_DIR}")
+if(Filament_INCLUDE_DIR)
+    get_filename_component(Filament_ROOT_DIR "${Filament_INCLUDE_DIR}" DIRECTORY)
 endif()
 
-# Find include directory
-find_path(Filament_INCLUDE_DIR
-        NAMES filament/Engine.h
-        PATHS
-        ${Filament_ROOT}
-        ${Filament_ROOT}/include
-        PATH_SUFFIXES include
-)
-
-# Set library search paths - try multiple possible locations
-set(_filament_lib_paths
-        ${Filament_ROOT}/lib
-        ${Filament_ROOT}/lib/x86_64
-)
-
-# Define all Filament libraries to find (in link order)
-# 注意：gltfio 是薄包装层，实际实现（AssetLoader/FilamentAsset等）在 gltfio_core 中
-# 注意：meshoptimizer, mikktspace, stb 等已嵌入 geometry/libmeshoptimizer.a 等库中，不要单独链接
-set(FILAMENT_LIBRARIES_NAMES
-        shaders            # 预编译着色器数据包 SHADERS_PACKAGE（filamat 依赖）
-        ibl
-        image
+if(NOT Filament_FIND_COMPONENTS)
+    list(APPEND
+        Filament_FIND_COMPONENTS
         filament
-        filabridge
-        filaflat
-        smol-v
-        filamat
         backend
-        gltfio
-        gltfio_core        # GLTF 核心实现（AssetLoader、FilamentAsset 等）
-        utils
-        bluegl
-        bluevk
-        filameshio         # 网格加载器（GLTF 依赖）
-        ktxreader          # KTX 纹理读取器（GLTF 依赖）
-        dracodec           # Draco 解压缩（GLTF 可选依赖）
-        geometry           # 几何工具（包含 meshoptimizer/mikktspace/stb）
-        basis_transcoder   # BasisU 纹理解码（imageio 依赖）
-        uberarchive        # Ubershader 材质档案（gltfio 依赖）
-        uberzlib           # UberZ 压缩库（uberarchive 依赖）
-        matp               # 材质处理（uberarchive 依赖）
-)
-
-# Find all libraries using loop
-foreach(lib_name ${FILAMENT_LIBRARIES_NAMES})
-  if(NOT WIN32)
-    # On non-Windows platforms (Linux, macOS), find_library() automatically adds the 'lib' prefix
-    # e.g., NAMES ibl => searches for libibl.so, libibl.a on Linux
-    find_library(Filament_${lib_name}_LIBRARY
-      NAMES ${lib_name}
-      PATHS ${_filament_lib_paths})
-  else()
-    # On Windows, library names may or may not have 'lib' prefix
-    # e.g., ibl.lib or libibl.lib
-    find_library(Filament_${lib_name}_LIBRARY
-      NAMES ${lib_name} lib${lib_name}
-      PATHS ${_filament_lib_paths})
-  endif()
-  list(APPEND _required_vars Filament_${lib_name}_LIBRARY)
-endforeach()
-
-# Set results
-include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(Filament
-        REQUIRED_VARS
-        Filament_INCLUDE_DIR
-        ${_required_vars}
-)
-
-if(Filament_FOUND)
-  set(Filament_INCLUDE_DIRS ${Filament_INCLUDE_DIR})
-
-  # Build library list in correct link order
-  set(Filament_LIBRARIES "")
-  foreach(lib_name ${FILAMENT_LIBRARIES_NAMES})
-    list(APPEND Filament_LIBRARIES ${Filament_${lib_name}_LIBRARY})
-  endforeach()
-
-  # Create imported targets for each library
-  foreach(lib_name ${FILAMENT_LIBRARIES_NAMES})
-    if(NOT TARGET Filament::${lib_name})
-      add_library(Filament::${lib_name} STATIC IMPORTED)
-      set_target_properties(Filament::${lib_name} PROPERTIES
-              IMPORTED_LOCATION "${Filament_${lib_name}_LIBRARY}"
-      )
-      # filament core library needs include directories
-      if(lib_name STREQUAL "filament")
-        set_target_properties(Filament::${lib_name} PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${Filament_INCLUDE_DIR}"
-        )
-      endif()
-    endif()
-  endforeach()
-else()
-  message(WARNING "Filament not found. Filament features will be disabled.")
+        bluegl # OpenGL bindings for macOS, Linux and Windows
+        bluevk # Vulkan bindings for macOS, Linux, Windows and Android
+        camutils # Camera manipulation utilities
+        filabridge # Library shared by the Filament engine and host tools
+        filaflat # Serialization/deserialization library used for materials
+        filamat # Material generation library
+        filameshio # Tiny filamesh parsing library (see also tools/filamesh)
+        geometry # Mesh-related utilities
+        gltfio_core
+        gltfio # Loader for glTF 2.0
+        ibl # IBL generation tools
+        image # Image filtering and simple transforms
+        imageio # Image file reading / writing, only intended for internal use
+        matdbg # DebugServer for inspecting shaders at run-time (debug builds only)
+        math # Math library
+        mathio # Math types support for output streams
+        utils # Utility library (threads, memory, data structures, etc.)
+        viewer # glTF viewer library (requires gltfio)
+        zstd
+        smol-v
+    )
 endif()
 
-# Mark all library variables as advanced
-mark_as_advanced(Filament_INCLUDE_DIR)
-foreach(lib_name ${FILAMENT_LIBRARIES_NAMES})
-  mark_as_advanced(Filament_${lib_name}_LIBRARY)
+foreach(COMPONENT ${Filament_FIND_COMPONENTS})
+    if(MSVC)
+        find_library(
+            Filament_${COMPONENT}_LIBRARY_RELEASE
+            NAMES "${COMPONENT}" "lib${COMPONENT}"
+            PATHS ${Filament_ROOT_DIR}
+            PATH_SUFFIXES lib/x86_64/md
+            NO_DEFAULT_PATH
+        )
+
+        find_library(
+            Filament_${COMPONENT}_LIBRARY_DEBUG
+            NAMES "${COMPONENT}" "lib${COMPONENT}"
+            PATHS ${Filament_ROOT_DIR}
+            PATH_SUFFIXES lib/x86_64/mdd
+            NO_DEFAULT_PATH
+        )
+
+        if(Filament_${COMPONENT}_LIBRARY_RELEASE OR Filament_${COMPONENT}_LIBRARY_DEBUG)
+            if(NOT TARGET filament::${COMPONENT})
+                add_library(filament::${COMPONENT} STATIC IMPORTED)
+                set_target_properties(filament::${COMPONENT}
+                    PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${Filament_INCLUDE_DIR}"
+
+                    IMPORTED_LOCATION_RELEASE "${Filament_${COMPONENT}_LIBRARY_RELEASE}"
+                    IMPORTED_LOCATION_RELWITHDEBINFO "${Filament_${COMPONENT}_LIBRARY_RELEASE}"
+                    IMPORTED_LOCATION_MINSIZEREL "${Filament_${COMPONENT}_LIBRARY_RELEASE}"
+                    IMPORTED_LOCATION_DEBUG "${Filament_${COMPONENT}_LIBRARY_DEBUG}"
+                )
+
+                set(Filament_${COMPONENT}_FOUND TRUE)
+            endif()
+        endif()
+    else()
+        find_library(
+            Filament_${COMPONENT}_LIBRARY
+            NAMES "${COMPONENT}" "lib${COMPONENT}"
+            PATHS ${Filament_ROOT_DIR}
+            PATH_SUFFIXES lib/x86_64
+            NO_DEFAULT_PATH
+        )
+
+        
+        if(Filament_${COMPONENT}_LIBRARY)
+            if(NOT TARGET filament::${COMPONENT})
+                add_library(filament::${COMPONENT} STATIC IMPORTED)
+                set_target_properties(filament::${COMPONENT}
+                    PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${Filament_INCLUDE_DIR}"
+
+                    IMPORTED_LOCATION "${Filament_${COMPONENT}_LIBRARY}"
+                )
+
+                set(Filament_${COMPONENT}_FOUND TRUE)
+            endif()
+        endif()
+    endif()
 endforeach()
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(
+    Filament
+    REQUIRED_VARS Filament_ROOT_DIR Filament_INCLUDE_DIR
+    HANDLE_COMPONENTS
+)
